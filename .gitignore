@@ -239,5 +239,3 @@ __pycache__/
 *.onnx
 *.engine
 
-# 运行时产物
-baseline_results.txt
