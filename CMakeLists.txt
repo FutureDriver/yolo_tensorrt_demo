@@ -46,31 +46,56 @@ find_package(OpenCV REQUIRED)
 # 并把路径存到 OpenCV_INCLUDE_DIRS 和 OpenCV_LIBS 变量里
 
 # ============================================================
-#  4. 定义我们要编译的可执行文件
+#  4. 公共包含目录设置（所有目标共享）
 # ============================================================
-add_executable(build_engine src/build_engine.cpp)
-# 这里只编译一个文件：src/build_engine.cpp，
-# 生成的可执行文件名字叫 build_engine
-
-# ============================================================
-#  5. 包含头文件目录（让编译器能找到 #include 的文件）
-# ============================================================
-target_include_directories(build_engine PRIVATE
+# 把所有可能用到的头文件目录集中到一个变量里，便于维护
+set(COMMON_INCLUDE_DIRS
     ${CUDA_INCLUDE_DIR}         # CUDA 头文件
     ${TENSORRT_INCLUDE_DIR}     # TensorRT 头文件
     ${OpenCV_INCLUDE_DIRS}      # OpenCV 头文件
+    ${CMAKE_SOURCE_DIR}/include # 本工程的头文件（如 yolo_infer.h）
 )
-# PRIVATE 表示这些头文件只在这个目标内部使用，不会传染给其他目标
 
 # ============================================================
-#  6. 链接库文件（把代码里用到的函数实现“绑”到可执行文件上）
+#  5. 定义通用的链接库列表（给所有目标用）
 # ============================================================
-target_link_libraries(build_engine
-    ${NVINFER_LIB}          # 核心推理
-    ${NVONNXPARSER_LIB}     # ONNX 解析
-    ${NVINFER_PLUGIN_LIB}   # 插件支持
-    ${OpenCV_LIBS}          # OpenCV 所有库
-    pthread                 # POSIX 线程库（并行构建可能用到）
-    dl                      # 动态链接库加载（dlopen 等）
+set(COMMON_LIBS
+    ${NVINFER_LIB}              # 核心推理
+    ${NVINFER_PLUGIN_LIB}       # 插件支持
+    ${OpenCV_LIBS}              # OpenCV 所有库
+    pthread                     # POSIX 线程库
+    dl                          # 动态链接库加载
+    cudart                      # CUDA 运行时库（cudaMemcpy 等）
 )
-# 链接顺序不重要，只要所有需要的库都在就行
+
+# ============================================================
+#  6. 构建目标
+# ============================================================
+
+# ----- 6.1 推理核心库 yolo_infer -----
+add_library(yolo_infer src/yolo_infer.cpp)
+target_include_directories(yolo_infer PRIVATE ${COMMON_INCLUDE_DIRS})
+target_link_libraries(yolo_infer ${COMMON_LIBS})
+# 注意：这是一个静态库（默认），会被后续可执行文件链接
+
+# ----- 6.2 引擎构建工具 build_engine -----
+add_executable(build_engine src/build_engine.cpp)
+target_include_directories(build_engine PRIVATE ${COMMON_INCLUDE_DIRS})
+target_link_libraries(build_engine
+    ${NVINFER_LIB}
+    ${NVONNXPARSER_LIB}     # 构建引擎需要 ONNX 解析器
+    ${NVINFER_PLUGIN_LIB}
+    ${OpenCV_LIBS}
+    pthread
+    dl
+)
+
+# ----- 6.3 快速演示程序 run_demo -----
+add_executable(run_demo src/main.cpp)
+target_include_directories(run_demo PRIVATE ${COMMON_INCLUDE_DIRS})
+target_link_libraries(run_demo yolo_infer ${COMMON_LIBS})
+
+# ----- 6.4 性能基准测试 benchmark -----
+add_executable(benchmark src/benchmark.cpp)
+target_include_directories(benchmark PRIVATE ${COMMON_INCLUDE_DIRS})
+target_link_libraries(benchmark yolo_infer ${COMMON_LIBS})

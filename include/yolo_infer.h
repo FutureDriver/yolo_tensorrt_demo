@@ -1,29 +1,30 @@
 // ===================================================================
 // yolo_infer.h
-// 高性能 YOLOv8 TensorRT 推理类 —— 你的面试高光代码
-// 核心展示 : RAII 资源管理 | 移动语义 | 异步 CUDA 流 | 智能指针
+// YOLOv8 TensorRT 高性能推理类
+// 展示技术点：RAII 资源管理、移动语义、异步 CUDA 流、自定义删除器
 // ===================================================================
+
 #pragma once
 
 #include <cuda_runtime_api.h>
 #include <NvInfer.h>
 #include <opencv2/opencv.hpp>
 
+#include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
 // ----- 检测结果结构体 -----
 struct BBox {
-    float x1, y1, x2, y2;  // 边界框坐标 (左上角 & 右下角)
+    float x1, y1, x2, y2;  // 边界框坐标（左上角，右下角）
     float conf;             // 置信度
     int label;              // 类别 ID
 };
 
-// ----- 日志记录器（简单终端输出）-----
+// ----- 日志记录器（输出警告及以上级别信息）-----
 class Logger : public nvinfer1::ILogger {
     void log(Severity severity, const char* msg) noexcept override {
-        // 只输出警告及以上级别的信息，减少干扰
         if (severity <= Severity::kWARNING) {
             std::cout << "[TensorRT] " << msg << std::endl;
         }
@@ -32,33 +33,30 @@ class Logger : public nvinfer1::ILogger {
 
 class YOLOInfer {
 public:
-    // ----- 1. 构造函数（加载引擎，分配资源）-----
+    // ----- 构造 / 析构 / 移动语义 -----
     explicit YOLOInfer(const std::string& engine_path);
-
-    // ----- 2. 析构函数（自动释放所有 GPU 资源）-----
     ~YOLOInfer();
 
-    // ----- 3. 禁止拷贝，允许移动（面试考点：移动语义）-----
+    // 禁止拷贝，允许移动（实现移动构造函数和移动赋值运算符）
     YOLOInfer(const YOLOInfer&) = delete;
     YOLOInfer& operator=(const YOLOInfer&) = delete;
     YOLOInfer(YOLOInfer&& other) noexcept;
     YOLOInfer& operator=(YOLOInfer&& other) noexcept;
 
-    // ----- 4. 核心推理接口（输入 OpenCV 图片，返回检测框）-----
+    // ----- 核心推理接口 -----
     std::vector<BBox> Infer(const cv::Mat& image);
 
-    // ----- 5. 性能辅助：获取输入张量尺寸 -----
+    // ----- 性能辅助 -----
     int GetInputWidth()  const { return input_w_; }
     int GetInputHeight() const { return input_h_; }
 
 private:
-    // ----- 内部流水线函数 -----
-    void Preprocess(const cv::Mat& image);        // 图像预处理（CPU->GPU 拷贝）
+    // 内部流水线
+    void Preprocess(const cv::Mat& image);        // 预处理 + 异步上传 GPU
     void DoInference();                           // 执行推理
     std::vector<BBox> Postprocess();              // 解析输出 + NMS
 
-    // ----- 资源管理（全部用智能指针 RAII 管理）-----
-    // TensorRT 对象的专用删除器（面试考点：自定义 deleter）
+    // ----- 资源管理（RAII + 自定义删除器）-----
     struct TrtDeleter {
         template <typename T>
         void operator()(T* p) const {
@@ -66,14 +64,13 @@ private:
         }
     };
 
-    std::unique_ptr<nvinfer1::IRuntime, TrtDeleter> runtime_;         // 运行时
-    std::unique_ptr<nvinfer1::ICudaEngine, TrtDeleter> engine_;       // 引擎
-    std::unique_ptr<nvinfer1::IExecutionContext, TrtDeleter> context_; // 执行上下文
+    std::unique_ptr<nvinfer1::IRuntime, TrtDeleter> runtime_;
+    std::unique_ptr<nvinfer1::ICudaEngine, TrtDeleter> engine_;
+    std::unique_ptr<nvinfer1::IExecutionContext, TrtDeleter> context_;
 
-    // CUDA 流（异步操作）
     cudaStream_t stream_ = nullptr;
 
-    // 输入输出缓冲区 (GPU 显存) —— 用 unique_ptr + cudaFree 作为 deleter
+    // GPU 显存缓冲区（自定义删除器调用 cudaFree）
     struct CudaDeleter {
         void operator()(void* p) const {
             if (p) cudaFree(p);
@@ -82,18 +79,20 @@ private:
     std::unique_ptr<void, CudaDeleter> input_gpu_;
     std::unique_ptr<void, CudaDeleter> output_gpu_;
 
-    // 输入输出在 CPU 端的拷贝
-    std::vector<float> input_cpu_;   // 预处理后的数据（归一化 float）
-    std::vector<float> output_cpu_;  // 推理输出（从 GPU 拷贝回来）
+    // CPU 端数据缓冲
+    std::vector<float> input_cpu_;
+    std::vector<float> output_cpu_;
 
-    size_t input_size_{0};   // 输入缓冲区字节数
-    size_t output_size_{0};  // 输出缓冲区字节数
-    int input_w_{640}, input_h_{640}; // 模型输入尺寸
-
-    // 绑定缓冲区指针（TensorRT API 要求）
+    // 绑定到 TensorRT 执行上下文的缓冲指针数组
     std::vector<void*> buffers_;
-    bool initialized_ = false; // 初始化成功标志
 
-    // 预处理常量
+    size_t input_size_{0};
+    size_t output_size_{0};
+    int input_w_{640}, input_h_{640};
+    int output_num_anchors_{0};   // 检测头锚点数量
+    int output_num_classes_{0};   // 类别数（从引擎推导）
+
+    bool initialized_ = false;
+
     const float kNormScale = 1.0f / 255.0f;
 };
