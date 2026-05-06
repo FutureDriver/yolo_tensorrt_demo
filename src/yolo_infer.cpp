@@ -226,9 +226,16 @@ std::vector<BBox> YOLOInfer::Postprocess() {
         }
     }
 
+    // 转换为 OpenCV 需要的矩形格式 (x, y, width, height)
+    std::vector<cv::Rect2d> rects;
+    rects.reserve(proposals.size());
+    for (const auto& b : proposals) {
+        rects.emplace_back(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
+    }
+    
     // NMS（非极大值抑制）
     std::vector<int> indices;
-    cv::dnn::NMSBoxes(proposals, confidences, 0.5f, 0.4f, indices);   // score_thresh, nms_thresh
+    cv::dnn::NMSBoxes(rects, confidences, 0.5f, 0.4f, indices);
 
     std::vector<BBox> final_boxes;
     final_boxes.reserve(indices.size());
