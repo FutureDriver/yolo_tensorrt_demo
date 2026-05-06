@@ -12,7 +12,7 @@ int main() {
     std::cout << "Detected " << boxes.size() << " objects." << std::endl;
     for (auto& b : boxes) {
         std::cout << "Box: (" << b.x1 << "," << b.y1 << ")-(" << b.x2 << "," << b.y2
-                  << ") conf=" << b.confidence << " label=" << b.label << std::endl;
+                  << ") conf=" << b.conf << " label=" << b.label << std::endl;
     }
     return 0;
 }
