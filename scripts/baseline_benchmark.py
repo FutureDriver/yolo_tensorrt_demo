@@ -4,7 +4,7 @@ import cv2
 import subprocess
 
 # 读取图片
-img_path = "/workspace/demo/demo.jpg"
+img_path = "/workspace/demo/data/demo.jpg"
 img = cv2.imread(img_path)
 if img is None:
     print(f"ERROR: Cannot load image from {img_path}")
@@ -12,7 +12,7 @@ if img is None:
 
 # ---------- Ultralytics 原生推理基线 ----------
 from ultralytics import YOLO
-model = YOLO("/workspace/demo/yolov8n.pt")
+model = YOLO("/workspace/demo/models/yolov8n.pt")
 
 latencies = []
 print("Warmup Ultralytics...")
@@ -29,7 +29,7 @@ print(f"Ultralytics: avg={avg_ultra:.2f}ms, std={std_ultra:.2f}ms")
 
 # ---------- ONNX Runtime 基线 ----------
 import onnxruntime as ort
-sess = ort.InferenceSession("/workspace/demo/yolov8n.onnx",
+sess = ort.InferenceSession("/workspace/demo/models/yolov8n.onnx",
                             providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 input_name = sess.get_inputs()[0].name
 
@@ -62,7 +62,7 @@ except:
 print(f"GPU memory used: {mem_used} MiB")
 
 # 保存结果
-with open("/workspace/demo/baseline_results.txt", "w") as f:
+with open("/workspace/demo/results/baseline_results.txt", "w") as f:
     f.write(f"Ultralytics: avg={avg_ultra:.2f}ms, std={std_ultra:.2f}ms\n")
     f.write(f"ONNX Runtime GPU: avg={avg_ort:.2f}ms, std={std_ort:.2f}ms\n")
     f.write(f"GPU memory used: {mem_used} MiB\n")

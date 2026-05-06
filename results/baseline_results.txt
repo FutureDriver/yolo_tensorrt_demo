@@ -1,0 +1,3 @@
+Ultralytics: avg=6.05ms, std=0.80ms
+ONNX Runtime GPU: avg=5.80ms, std=0.45ms
+GPU memory used: 1440 MiB

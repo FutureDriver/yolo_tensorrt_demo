@@ -222,6 +222,8 @@ __marimo__/
 *.tar
 *.tar.gz
 *.zip
+# 模型引擎（可以由代码重新生成，但也可以提交；按需取消注释）
+models/yolov8n_fp16.engine
 
 # Python 缓存
 __pycache__/
@@ -238,3 +240,6 @@ __pycache__/
 *.pt
 *.onnx
 *.engine
+
+# 运行时产物（基线结果可提交，这里先不加；如果不想提交结果，则启用）
+# results/baseline_results.txt
