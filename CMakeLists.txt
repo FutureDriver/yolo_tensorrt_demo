@@ -30,12 +30,19 @@ set(TENSORRT_INCLUDE_DIR /usr/include/x86_64-linux-gnu)   # 头文件位置
 set(TENSORRT_LIB_DIR /usr/lib/x86_64-linux-gnu)           # 库文件位置
 
 # 查找具体的 TensorRT 库文件（相当于告诉链接器“这些库必须存在”）
-find_library(NVINFER_LIB nvinfer             # 核心推理库
+find_library(NVINFER_LIB nvinfer                    # 核心推理库
              PATHS ${TENSORRT_LIB_DIR} REQUIRED)
-find_library(NVONNXPARSER_LIB nvonnxparser   # ONNX 解析器库（读 .onnx 用）
+find_library(NVONNXPARSER_LIB nvonnxparser          # ONNX 解析器库（读 .onnx 用）
              PATHS ${TENSORRT_LIB_DIR} REQUIRED)
-find_library(NVINFER_PLUGIN_LIB nvinfer_plugin # 插件库（FP16等高级特性用）
+find_library(NVINFER_PLUGIN_LIB nvinfer_plugin      # 插件库（FP16等高级特性用）
              PATHS ${TENSORRT_LIB_DIR})
+
+# ============================================================
+#  2.5 配置 CUDA Runtime 库（cudart）
+#  cudaStreamCreate 等 API 的实现需要 cudart
+# ============================================================
+set(CUDA_LIB_DIR /usr/local/cuda-12.2/targets/x86_64-linux/lib)
+set(CUDART_LIB ${CUDA_LIB_DIR}/libcudart.so)        # 直接使用绝对路径
 
 # ============================================================
 #  3. 配置 OpenCV
@@ -65,7 +72,7 @@ set(COMMON_LIBS
     ${OpenCV_LIBS}              # OpenCV 所有库
     pthread                     # POSIX 线程库
     dl                          # 动态链接库加载
-    cudart                      # CUDA 运行时库（cudaMemcpy 等）
+    ${CUDART_LIB}               # CUDA 运行时库（cudaMemcpy 等）（绝对路径，避免搜索问题）
 )
 
 # ============================================================
@@ -85,6 +92,7 @@ target_link_libraries(build_engine
     ${NVINFER_LIB}
     ${NVONNXPARSER_LIB}     # 构建引擎需要 ONNX 解析器
     ${NVINFER_PLUGIN_LIB}
+    ${CUDART_LIB}           # 构建引擎也需要 CUDA 运行时库（因为可能会调用 cudaMalloc 等 API）
     ${OpenCV_LIBS}
     pthread
     dl
