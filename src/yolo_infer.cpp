@@ -259,12 +259,13 @@ std::vector<BBox> YOLOInfer::Infer(const cv::Mat& image) {
     auto boxes = Postprocess();
     auto t3 = std::chrono::high_resolution_clock::now();
 
-    std::cout << "[Latency] pre: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count()
-              << " us, inference: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count()
-              << " us, post: "
-              << std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count()
-              << " us" << std::endl;
+    // 为了避免 bench 时输出干扰，注释掉日志输出
+    //std::cout << "[Latency] pre: "
+    //          << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count()
+    //          << " us, inference: "
+    //        << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count()
+    //        << " us, post: "
+    //        << std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count()
+    //        << " us" << std::endl;
     return boxes;
 }
