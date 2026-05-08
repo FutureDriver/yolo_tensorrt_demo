@@ -36,6 +36,13 @@ int main() {
     config->setFlag(nvinfer1::BuilderFlag::kFP16);
     config->setMemoryPoolLimit(nvinfer1::MemoryPoolType::kWORKSPACE, 1ULL << 30); // 1 GB
 
+    // 添加优化配置文件（即使静态尺寸也必须，否则 TensorRT 会禁用部分优化）
+    auto profile = builder->createOptimizationProfile();
+    profile->setDimensions("images", nvinfer1::OptProfileSelector::kMIN, nvinfer1::Dims4{1, 3, 640, 640});
+    profile->setDimensions("images", nvinfer1::OptProfileSelector::kOPT, nvinfer1::Dims4{1, 3, 640, 640});
+    profile->setDimensions("images", nvinfer1::OptProfileSelector::kMAX, nvinfer1::Dims4{1, 3, 640, 640});
+    config->addOptimizationProfile(profile);
+
     // 5. 构建序列化引擎
     auto plan = std::unique_ptr<nvinfer1::IHostMemory>(
         builder->buildSerializedNetwork(*network, *config)
