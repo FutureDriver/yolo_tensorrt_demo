@@ -1,3 +1,7 @@
-Ultralytics: avg=6.05ms, std=0.80ms
-ONNX Runtime GPU: avg=5.80ms, std=0.45ms
-GPU memory used: 1440 MiB
+Python 推理基线（3次独立运行平均值）
+测试日期：2026-05-10
+测试环境：Docker nvcr.io/nvidia/tensorrt:23.08-py3, GPU: NVIDIA GeForce RTX (R9000P)
+
+Ultralytics (PyTorch): avg=6.61ms, std=0.94ms
+ONNX Runtime (GPU):    avg=6.02ms, std=0.42ms
+GPU memory used: ~1600 MiB
