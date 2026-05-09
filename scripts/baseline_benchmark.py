@@ -1,3 +1,13 @@
+# ============================================================
+# Copyright (c) 2026 FutureDriver
+# SPDX-License-Identifier: MIT
+#
+# 文件：baseline_benchmark.py
+# 功能：Python 推理基线测试（Ultralytics / ONNX Runtime）
+# 作者：FutureDriver
+# 日期：2026-05-06
+# ============================================================
+
 import time
 import numpy as np
 import cv2

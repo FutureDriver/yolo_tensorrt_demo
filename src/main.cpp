@@ -1,5 +1,16 @@
-#include "yolo_infer.h"
+// ============================================================
+// Copyright (c) 2026 FutureDriver
+// SPDX-License-Identifier: MIT
+//
+// 文件：main.cpp
+// 功能：快速演示：加载图片，推理并打印检测结果
+// 作者：FutureDriver
+// 日期：2026-05-06
+// ============================================================
+
 #include <iostream>
+#include "yolo_infer.hpp"
+
 
 int main() {
     YOLOInfer infer("../models/yolov8n_fp16.engine");

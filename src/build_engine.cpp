@@ -1,3 +1,13 @@
+// ============================================================
+// Copyright (c) 2026 FutureDriver
+// SPDX-License-Identifier: MIT
+//
+// 文件：build_engine.cpp
+// 功能：从 ONNX 构建 FP16 TensorRT 引擎
+// 作者：FutureDriver
+// 日期：2026-05-06
+// ============================================================
+
 #include <fstream>
 #include <iostream>
 #include <memory>

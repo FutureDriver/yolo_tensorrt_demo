@@ -1,6 +1,13 @@
-// benchmark.cpp
-// 对 C++ TensorRT 进行 1000 次推理性能基准测试，并与已保存的 Python 基线比较
-#include "yolo_infer.h"
+// ============================================================
+// Copyright (c) 2026 FutureDriver
+// SPDX-License-Identifier: MIT
+//
+// 文件：benchmark.cpp
+// 功能：性能基准测试，对 C++ TensorRT 进行 1000 次推理性能基准测试，并与已保存的 Python 基线比较
+// 作者：FutureDriver
+// 日期：2026-05-06
+// ============================================================
+
 #include <iostream>
 #include <fstream>
 #include <chrono>
@@ -8,6 +15,7 @@
 #include <numeric>
 #include <cmath>
 #include <iomanip>
+#include "yolo_infer.hpp"
 
 int main() {
     const std::string engine_path = "../models/yolov8n_fp16.engine";

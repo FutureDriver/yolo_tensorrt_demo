@@ -1,4 +1,14 @@
 # ============================================================
+# Copyright (c) 2026 FutureDriver
+# SPDX-License-Identifier: MIT
+#
+# 文件：CMakeLists.txt
+# 功能：项目构建配置，编译推理引擎、演示程序和性能测试
+# 作者：FutureDriver
+# 日期：2026-05-06
+# ============================================================
+
+# ============================================================
 #  CMake 最低版本要求
 # ============================================================
 cmake_minimum_required(VERSION 3.18)
@@ -60,7 +70,7 @@ set(COMMON_INCLUDE_DIRS
     ${CUDA_INCLUDE_DIR}         # CUDA 头文件
     ${TENSORRT_INCLUDE_DIR}     # TensorRT 头文件
     ${OpenCV_INCLUDE_DIRS}      # OpenCV 头文件
-    ${CMAKE_SOURCE_DIR}/include # 本工程的头文件（如 yolo_infer.h）
+    ${CMAKE_SOURCE_DIR}/include # 本工程的头文件（如 yolo_infer.hpp）
 )
 
 # ============================================================

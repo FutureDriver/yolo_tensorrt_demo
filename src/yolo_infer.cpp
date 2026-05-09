@@ -1,9 +1,19 @@
-#include "yolo_infer.h"
+// ============================================================
+// Copyright (c) 2026 FutureDriver
+// SPDX-License-Identifier: MIT
+//
+// 文件：yolo_infer.cpp
+// 功能：YOLOv8 TensorRT 高性能推理类实现
+// 作者：FutureDriver
+// 日期：2026-05-06
+// ============================================================
+
 #include <fstream>
 #include <chrono>
 #include <numeric>
 #include <algorithm>
 #include <opencv2/dnn.hpp>      // NMS
+#include "yolo_infer.hpp"
 
 namespace {
     // 全局 Logger 实例，供所有 TensorRT 对象共享
