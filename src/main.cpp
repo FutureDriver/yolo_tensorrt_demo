@@ -13,8 +13,8 @@
 
 
 int main() {
-    YOLOInfer infer("../models/yolov8n_fp16.engine");
-    cv::Mat img = cv::imread("../data/demo.jpg");
+    YOLOInfer infer("models/yolov8n_fp16.engine");
+    cv::Mat img = cv::imread("data/demo.jpg");
     if (img.empty()) {
         std::cerr << "Failed to load image" << std::endl;
         return -1;
