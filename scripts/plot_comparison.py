@@ -71,11 +71,11 @@ stages = [
 
     # ---------- 优化阶段 1：预处理 CUDA 化 ----------
     # 生成方式：完成 GPU 预处理优化后，复制 cpp_benchmark.csv 为 cpp_benchmark_cuda_pre.csv
-    # (
-    #     "TensorRT FP16\n+CUDA预处理",
-    #     "results/cpp_cuda_pre.csv",
-    #     "TensorRT_FP16"
-    # ),
+    (
+        "TensorRT FP16\n+CUDA预处理",
+        "results/cpp_cuda_pre.csv",
+        "TensorRT_FP16"
+    ),
 
     # ---------- 优化阶段 2：后处理 GPU 化 ----------
     # 生成方式：用 EfficientNMS 插件重构后，复制新的 CSV 文件
