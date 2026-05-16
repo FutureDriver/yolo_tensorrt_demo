@@ -15,6 +15,15 @@
 #include <opencv2/dnn.hpp>      // NMS
 #include "yolo_infer.hpp"
 
+// ----- 外部 CUDA 预处理函数（定义在 preprocess.cu 中） -----
+void launch_preprocess(
+    const unsigned char* img_data,   // BGR 图像数据指针
+    int width,                       // 图像宽度
+    int height,                      // 图像高度
+    float* gpu_dst,                  // 输出 NCHW float 缓冲区（GPU）
+    cudaStream_t stream              // CUDA 流
+);
+
 namespace {
     // 全局 Logger 实例，供所有 TensorRT 对象共享
     Logger gLogger;
@@ -157,27 +166,16 @@ YOLOInfer& YOLOInfer::operator=(YOLOInfer&& other) noexcept {
     return *this;
 }
 
-// ----- 图像预处理 -----
+// ----- 图像预处理（GPU 加速版）-----
+// 将 BGR8 图像直接转换为 NCHW 格式的 float 张量，并存放在 GPU 显存中
 void YOLOInfer::Preprocess(const cv::Mat& image) {
-    cv::Mat rgb, resized;
-    cv::cvtColor(image, rgb, cv::COLOR_BGR2RGB);
-    // 使用双线性插值，缩放至模型输入尺寸
-    cv::resize(rgb, resized, cv::Size(input_w_, input_h_), 0, 0, cv::INTER_LINEAR);
-    resized.convertTo(resized, CV_32FC3, kNormScale);
-
-    // HWC -> CHW 存入连续内存
-    std::vector<cv::Mat> channels(3);
-    cv::split(resized, channels);
-    float* ptr = input_cpu_.data();
-    for (int c = 0; c < 3; ++c) {
-        std::memcpy(ptr + c * input_w_ * input_h_,
-                    channels[c].data,
-                    input_w_ * input_h_ * sizeof(float));
-    }
-
-    // 异步拷贝到 GPU
-    cudaMemcpyAsync(input_gpu_.get(), input_cpu_.data(), input_size_,
-                    cudaMemcpyHostToDevice, stream_);
+    launch_preprocess(
+        image.data,                              // 原始像素数据（BGR 8‑bit）
+        image.cols, image.rows,                  // 图像宽高
+        static_cast<float*>(input_gpu_.get()),   // 输出到 GPU 输入缓冲区NCHW
+        stream_                                  // 异步流
+    );
+    // 预处理结果已在 GPU 上，无需额外的内存拷贝
 }
 
 // ----- 执行推理 -----
@@ -255,12 +253,19 @@ std::vector<BBox> YOLOInfer::Postprocess() {
     return final_boxes;
 }
 
-// ----- 核心推理接口，输出各阶段耗时 -----
+// ----- 核心推理接口，包含耗时诊断（仅输出一次）-----
 std::vector<BBox> YOLOInfer::Infer(const cv::Mat& image) {
     if (!initialized_) {
         std::cerr << "Infer called but object is not initialized" << std::endl;
         return {};
     }
+
+    // 静态变量：只在第一次调用时初始化，之后累计耗时
+    static int call_count = 0;
+    static std::chrono::microseconds pre_sum{0}, infer_sum{0}, post_sum{0};
+    static constexpr int kDiagWarmup = 20;   // 预热次数
+    static constexpr int kDiagRuns   = 100;  // 统计次数
+
     auto t0 = std::chrono::high_resolution_clock::now();
     Preprocess(image);
     auto t1 = std::chrono::high_resolution_clock::now();
@@ -269,13 +274,20 @@ std::vector<BBox> YOLOInfer::Infer(const cv::Mat& image) {
     auto boxes = Postprocess();
     auto t3 = std::chrono::high_resolution_clock::now();
 
-    // 为了避免 bench 时输出干扰，注释掉日志输出
-    //std::cout << "[Latency] pre: "
-    //          << std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count()
-    //          << " us, inference: "
-    //        << std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1).count()
-    //        << " us, post: "
-    //        << std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2).count()
-    //        << " us" << std::endl;
+    ++call_count;
+    // 跳过前 kDiagWarmup 次预热，之后累计 kDiagRuns 次统计
+    if (call_count > kDiagWarmup && call_count <= kDiagWarmup + kDiagRuns) {
+        pre_sum   += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
+        infer_sum += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
+        post_sum  += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
+    }
+    // 统计满 kDiagRuns 次后，输出一次平均耗时（微秒）
+    if (call_count == kDiagWarmup + kDiagRuns) {
+        std::cout << "[Profile] Preprocess avg: " << pre_sum.count() / kDiagRuns
+                  << " us, Inference avg: " << infer_sum.count() / kDiagRuns
+                  << " us, Postprocess avg: " << post_sum.count() / kDiagRuns
+                  << " us" << std::endl;
+    }
+
     return boxes;
 }
