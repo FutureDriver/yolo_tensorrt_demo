@@ -12,6 +12,7 @@
 #include <chrono>
 #include <numeric>
 #include <algorithm>
+#include <mutex>
 #include <opencv2/dnn.hpp>      // NMS
 #include "yolo_infer.hpp"
 
@@ -184,12 +185,10 @@ void YOLOInfer::DoInference() {
     context_->enqueueV2(buffers_.data(), stream_, nullptr);
 }
 
-// ----- 后处理与 NMS -----
+// ----- 后处理与 NMS（高效版：std::max_element + 并行）-----
 std::vector<BBox> YOLOInfer::Postprocess() {
-    // 等待所有异步操作完成
     cudaStreamSynchronize(stream_);
 
-    // 将输出从 GPU 拷贝回 CPU
     cudaMemcpyAsync(output_cpu_.data(), output_gpu_.get(), output_size_,
                     cudaMemcpyDeviceToHost, stream_);
     cudaStreamSynchronize(stream_);
@@ -200,48 +199,42 @@ std::vector<BBox> YOLOInfer::Postprocess() {
 
     std::vector<BBox> proposals;
     std::vector<float> confidences;
-    std::vector<int> labels;
 
-    // 遍历所有锚点
-    for (int i = 0; i < num_anchors; ++i) {
-        const float* row = out + i * (4 + num_classes);
-        float x_center = row[0];
-        float y_center = row[1];
-        float w = row[2];
-        float h = row[3];
+    // 使用 OpenCV 并行循环加速遍历 8400 个锚点
+    cv::parallel_for_(cv::Range(0, num_anchors), [&](const cv::Range& range) {
+        for (int i = range.start; i < range.end; ++i) {
+            const float* row = out + i * (4 + num_classes);
+            float x_center = row[0];
+            float y_center = row[1];
+            float w = row[2];
+            float h = row[3];
 
-        // 找到最大置信度及对应类别
-        float max_conf = 0.f;
-        int best_label = -1;
-        for (int c = 0; c < num_classes; ++c) {
-            float conf = row[4 + c];
-            if (conf > max_conf) {
-                max_conf = conf;
-                best_label = c;
-            }
-        }
+            // 用 std::max_element 快速找最大置信度
+            auto max_it = std::max_element(row + 4, row + 4 + num_classes);
+            float max_conf = *max_it;
+            if (max_conf < 0.6f) continue;   // 阈值 0.6 减少后续 NMS 压力
+            int best_label = static_cast<int>(max_it - (row + 4));
 
-        if (max_conf > 0.5f) {
-            // 将中心点 / 宽高转换为左上角和右下角（坐标已经归一化到 0~1，乘以输入尺寸）
             float x1 = (x_center - w / 2.0f) * input_w_;
             float y1 = (y_center - h / 2.0f) * input_h_;
             float x2 = (x_center + w / 2.0f) * input_w_;
             float y2 = (y_center + h / 2.0f) * input_h_;
 
+            // 注意：并行写入容器需加锁
+            static std::mutex mtx;
+            std::lock_guard<std::mutex> lock(mtx);
             proposals.push_back({x1, y1, x2, y2, max_conf, best_label});
             confidences.push_back(max_conf);
-            labels.push_back(best_label);
         }
-    }
+    });
 
-    // 转换为 OpenCV 需要的矩形格式 (x, y, width, height)
+    // NMS 转换
     std::vector<cv::Rect2d> rects;
     rects.reserve(proposals.size());
     for (const auto& b : proposals) {
         rects.emplace_back(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
     }
-    
-    // NMS（非极大值抑制）
+
     std::vector<int> indices;
     cv::dnn::NMSBoxes(rects, confidences, 0.5f, 0.4f, indices);
 
