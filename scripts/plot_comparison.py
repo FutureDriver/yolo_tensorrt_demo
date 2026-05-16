@@ -5,11 +5,12 @@
 #
 # 文件：plot_comparison.py
 # 功能：从各优化阶段的 CSV 读取延迟，绘制 C++ 优化历程对比图
-#       （对比基准为 Python PyTorch）
+#       （对比基准为 Python PyTorch），并在图上标注延迟降低百分比
 # 作者：FutureDriver
-# 日期：2026-05-16
+# 日期：2026-05-17
 # ============================================================
 
+import os
 import matplotlib
 matplotlib.use('Agg')          # 容器无显示器，必须使用非交互式后端
 import matplotlib.pyplot as plt
@@ -34,7 +35,7 @@ def load_mean_ms(csv_path, framework_name):
     with open(csv_path, 'r') as f:
         reader = csv.DictReader(f)          # 自动将第一行作为列名
         for row in reader:
-            name = row.get('framework', '')
+            name = row.get('framework', '').strip()
             if name == framework_name:     # 找到目标框架
                 try:
                     return float(row['mean_ms'])
@@ -44,35 +45,42 @@ def load_mean_ms(csv_path, framework_name):
 
 
 # ================================================================
-# 优化阶段登记
-#     每各阶段对应的测试结果文件名：
-#         C++ FP16 初始版本	：  results/cpp_fp16_baseline.csv
-#         GPU 预处理 CUDA 化：	results/cpp_cuda_pre.csv
-#         GPU 后处理：      	results/cpp_gpu_post.csv
-#         INT8 量化：           results/cpp_int8.csv
-#         流水线化：        	results/cpp_pipeline.csv
-#         这样一看名字就知道是哪个阶段的快照，比 cpp_benchmark.csv 清晰得多。
-#     每项：(图表标签, CSV文件路径, 框架名)
+#  项目根目录
+#  说明：使用脚本所在位置向上推一级得到项目根目录，
+#        确保无论从哪里执行脚本，CSV 路径都正确。
+# ================================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) + "/.."
+
+
+# ================================================================
+#  优化阶段登记
+#     各阶段对应的测试结果文件名：
+#         C++ FP16 初始版本	  ：  results/cpp_fp16_baseline.csv
+#         GPU 预处理 CUDA 化 ：	results/cpp_cuda_pre.csv
+#         GPU 后处理          ：	results/cpp_gpu_post.csv
+#         INT8 量化           ：  results/cpp_int8.csv
+#         流水线化             ：	results/cpp_pipeline.csv
+#     每项：(图表标签, CSV文件相对路径, 框架名)
 #     脚本会按顺序读取，不存在的 CSV 会自动跳过，图里不会显示。
 #     每完成一个优化，只需取消或增加一行即可更新图表。
+#     标签统一使用英文，避免容器内中文字体缺失导致乱码。
 # ================================================================
 stages = [
     # ---------- 基准线 ----------
     (
-        "PyTorch\n(Python)",                # 图表下方显示的标签
+        "PyTorch (Baseline)",              # 英文标签，无中文字体依赖
         "results/baseline_benchmark.csv",   # Python 基线 CSV
         "PyTorch"                           # CSV 中的 framework 列的值
     ),
     (
-        "TensorRT FP16\n(基线)",            # C++ 第一个版本
+        "TRT FP16 (Base)",                 # C++ 第一个版本
         "results/cpp_fp16_baseline.csv",
         "TensorRT_FP16"
     ),
 
     # ---------- 优化阶段 1：预处理 CUDA 化 ----------
-    # 生成方式：完成 GPU 预处理优化后，复制 cpp_benchmark.csv 为 cpp_benchmark_cuda_pre.csv
     (
-        "TensorRT FP16\n+CUDA预处理",
+        "TRT FP16 + CUDA Pre",
         "results/cpp_cuda_pre.csv",
         "TensorRT_FP16"
     ),
@@ -80,24 +88,24 @@ stages = [
     # ---------- 优化阶段 2：后处理 GPU 化 ----------
     # 生成方式：用 EfficientNMS 插件重构后，复制新的 CSV 文件
     # (
-    #     "TensorRT FP16\n+GPU后处理",
+    #     "TRT FP16 + GPU Post",
     #     "results/cpp_gpu_post.csv",
-    #     "TensorRT_FP16"                   # 如果框架名不变
+    #     "TensorRT_FP16"
     # ),
 
     # ---------- 优化阶段 3：INT8 量化 ----------
     # 生成方式：构建 INT8 引擎并测试后，复制 CSV
     # (
-    #     "TensorRT INT8\n+CUDA预处理",
+    #     "TRT INT8 + CUDA Pre",
     #     "results/cpp_int8.csv",
-    #     "TensorRT_FP16"                   # 或使用新框架名 'TensorRT_INT8'
+    #     "TensorRT_FP16"
     # ),
 
     # ---------- 优化阶段 4：流水线化 ----------
     # 说明：流水线化主要提升吞吐量，延迟可能不变或略增。
     #       这里先占位，后续可改为吞吐量对比图。
     # (
-    #     "TensorRT INT8\n+流水线",
+    #     "TRT INT8 + Pipeline",
     #     "results/cpp_pipeline.csv",
     #     "TensorRT_FP16"
     # ),
@@ -107,7 +115,8 @@ stages = [
 labels = []
 times = []
 
-for label, csv_path, fw_name in stages:
+for label, csv_rel_path, fw_name in stages:
+    csv_path = os.path.join(BASE_DIR, csv_rel_path)   # 拼接出绝对路径
     mean_val = load_mean_ms(csv_path, fw_name)
     if mean_val is not None:
         labels.append(label)
@@ -115,39 +124,54 @@ for label, csv_path, fw_name in stages:
     else:
         print(f"⚠️  跳过 {label} (文件不存在或缺少 {fw_name})")
 
-# 如果没有任何数据，直接退出
 if not times:
     print("❌ 没有任何可用数据，请检查 CSV 文件和框架名。")
     exit(1)
 
+# 以第一个柱（PyTorch）为基准计算延迟降低百分比
+baseline = times[0] if times else None
+
 # ===================== 开始绘图 =====================
 
-# 颜色方案（足以覆盖大多数优化阶段）
-colors = ['#1f77b4', '#2ca02c', '#ff7f0e', '#d62728',
-          '#9467bd', '#8c564b', '#e377c2', '#7f7f7f']
+# 颜色方案：基线用灰色，优化版本用渐变蓝绿
+colors = ['#7f7f7f'] + ['#2ca02c', '#1f77b4', '#ff7f0e', '#d62728', '#9467bd'][:len(times)-1]
 
-fig, ax = plt.subplots(figsize=(10, 6))
-bars = ax.bar(labels, times, color=colors[:len(labels)])
+fig, ax = plt.subplots(figsize=(12, 6))
+bars = ax.bar(labels, times, color=colors, width=0.55)
 
-# 在每个柱子上方显示具体延迟数字
+# 在每个柱子上标注延迟（柱内白色文字，清晰易读）
 for bar, val in zip(bars, times):
+    height = bar.get_height()
+    # 柱内延迟数值（白色加粗）
     ax.text(bar.get_x() + bar.get_width() / 2.0,
-            bar.get_height() + 0.15,
+            height * 0.95,
             f'{val:.2f} ms',
-            ha='center', va='bottom', fontsize=11)
+            ha='center', va='top', fontsize=11, color='white', fontweight='bold')
+
+    # 柱外上方标注：基线显示 "Baseline"，其余显示延迟降低百分比
+    if baseline and baseline > 0:
+        reduction = (baseline - val) / baseline * 100.0
+        if abs(val - baseline) < 1e-6:          # 是基准本身
+            label = "Baseline"
+        else:
+            label = f'-{reduction:.1f}%'
+        ax.text(bar.get_x() + bar.get_width() / 2.0,
+                height + 0.15,
+                label,
+                ha='center', va='bottom', fontsize=10, color='black')
 
 # 坐标轴和标题
 ax.set_ylabel('Average Latency (ms)')
 ax.set_title('YOLOv8n Inference Latency — C++ Optimization Journey')
-ax.grid(axis='y', alpha=0.4)
+ax.grid(axis='y', alpha=0.3)
 
 # 调整纵轴范围，给标注留出空间
-ymax = max(times) * 1.15
+ymax = max(times) * 1.2
 ax.set_ylim(0, ymax)
 
 plt.tight_layout()
 
 # 确保 results 目录存在，再保存图片
-Path('results').mkdir(exist_ok=True)
-plt.savefig('results/performance_chart.png', dpi=150)
-print("✅ 图表已保存到 results/performance_chart.png")
+out_path = os.path.join(BASE_DIR, "results", "performance_chart.png")
+plt.savefig(out_path, dpi=150)
+print(f"✅ 图表已保存到 {out_path}")
