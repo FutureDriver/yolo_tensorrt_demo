@@ -95,7 +95,7 @@ docker run --rm --gpus all -w /workspace/demo -v $(pwd):/workspace/demo trt_demo
 ## 📝 优化路线图
 - [✓] **预处理 CUDA 化**：使用 NPP resize + CUDA kernel 完成缩放与颜色转换，预处理延迟从 2.6ms 降至 1.3ms。
 - [ ] **后处理 GPU 化**：将 CPU 端 NMS 替换为 TensorRT EfficientNMS 插件，后处理预计从 2.3ms 降至 0.2ms 以内。
-- [ ] **INT8 量化**：通过校准数据集构建 INT8 引擎，进一步降低推理核心延迟约 30%。
+- [~] **INT8 量化**：校准器与构建逻辑已完成，因 WSL2 Docker 环境限制未完成端到端测试，计划在原生 Linux / Jetson 上验证
 - [ ] **流水线化**：多线程分离 I/O 与推理，提升连续帧吞吐量至 400+ FPS。
 
 ## 📄 许可证
