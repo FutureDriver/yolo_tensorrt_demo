@@ -4,33 +4,32 @@
 //
 // 文件：yolo_infer.cpp
 // 功能：YOLOv8 TensorRT 高性能推理类实现
+//       包含 GPU 预处理、端到端推理、结果解析
 // 作者：FutureDriver
-// 日期：2026-05-06
+// 日期：2026-05-24
 // ============================================================
 
 #include <fstream>
 #include <chrono>
 #include <numeric>
 #include <algorithm>
-#include <mutex>
-#include <opencv2/dnn.hpp>      // NMS
 #include "yolo_infer.hpp"
 
-// ----- 外部 CUDA 预处理函数（定义在 preprocess.cu 中） -----
+// 外部 CUDA 预处理函数（定义在 preprocess.cu 中）
+// 将 BGR 8-bit 图像在 GPU 上完成 resize、颜色转换、归一化、通道重排
 void launch_preprocess(
     const unsigned char* img_data,   // BGR 图像数据指针
     int width,                       // 图像宽度
     int height,                      // 图像高度
-    float* gpu_dst,                  // 输出 NCHW float 缓冲区（GPU）
-    cudaStream_t stream              // CUDA 流
+    float* gpu_dst,                  // 输出 NCHW float 缓冲区（GPU 显存）
+    cudaStream_t stream              // CUDA 异步流
 );
 
 namespace {
-    // 全局 Logger 实例，供所有 TensorRT 对象共享
-    Logger gLogger;
+    Logger gLogger;   // 全局 Logger，供所有 TensorRT 对象共享
 }
 
-// ----- 构造函数 -----
+// ----- 构造函数：加载引擎文件，反序列化，分配显存 -----
 YOLOInfer::YOLOInfer(const std::string& engine_path) {
     // 1. 读取序列化引擎文件
     std::ifstream file(engine_path, std::ios::binary);
@@ -41,7 +40,7 @@ YOLOInfer::YOLOInfer(const std::string& engine_path) {
     std::vector<char> engine_data((std::istreambuf_iterator<char>(file)),
                                   std::istreambuf_iterator<char>());
 
-    // 2. 创建 TensorRT Runtime，反序列化引擎
+    // 2. 创建 Runtime，反序列化引擎
     runtime_ = std::unique_ptr<nvinfer1::IRuntime, TrtDeleter>(
         nvinfer1::createInferRuntime(gLogger));
     if (!runtime_) {
@@ -64,21 +63,19 @@ YOLOInfer::YOLOInfer(const std::string& engine_path) {
     // 3. 创建 CUDA 异步流
     cudaStreamCreate(&stream_);
 
-    // 4. 获取输入 / 输出绑定信息（动态获取尺寸，无需硬编码）
+    // 4. 获取输入/输出绑定信息（端到端引擎输出形状为 [1, 300, 6]）
     int input_idx = -1, output_idx = -1;
     for (int i = 0; i < engine_->getNbIOTensors(); ++i) {
         const char* name = engine_->getIOTensorName(i);
         if (engine_->getTensorIOMode(name) == nvinfer1::TensorIOMode::kINPUT) {
             input_idx = i;
             auto dims = engine_->getTensorShape(name);
-            input_w_ = dims.d[3];   // NCHW 格式
+            input_w_ = dims.d[3];
             input_h_ = dims.d[2];
             input_size_ = dims.d[0] * dims.d[1] * dims.d[2] * dims.d[3] * sizeof(float);
         } else {
             output_idx = i;
             auto dims = engine_->getTensorShape(name);
-            output_num_classes_ = dims.d[1] - 4;   // 前4位为 bbox 坐标
-            output_num_anchors_ = dims.d[2];
             output_size_ = dims.d[0] * dims.d[1] * dims.d[2] * sizeof(float);
         }
     }
@@ -88,20 +85,18 @@ YOLOInfer::YOLOInfer(const std::string& engine_path) {
     }
 
     // 5. 分配 GPU 显存 & CPU 缓存
-    // 输入输出 GPU 缓冲区
     void* raw_input = nullptr, *raw_output = nullptr;
     cudaMalloc(&raw_input, input_size_);
     cudaMalloc(&raw_output, output_size_);
-    input_gpu_ = std::unique_ptr<void, CudaDeleter>(raw_input, CudaDeleter{});
+    input_gpu_  = std::unique_ptr<void, CudaDeleter>(raw_input, CudaDeleter{});
     output_gpu_ = std::unique_ptr<void, CudaDeleter>(raw_output, CudaDeleter{});
 
-    // CPU 端 buffer
     input_cpu_.resize(input_size_ / sizeof(float));
     output_cpu_.resize(output_size_ / sizeof(float));
 
-    // 6. 组织 bindings 数组（按输入输出顺序）
+    // 6. 组织 bindings 数组
     buffers_.resize(2);
-    buffers_[input_idx] = input_gpu_.get();
+    buffers_[input_idx]  = input_gpu_.get();
     buffers_[output_idx] = output_gpu_.get();
 
     initialized_ = true;
@@ -114,7 +109,6 @@ YOLOInfer::~YOLOInfer() {
         cudaStreamDestroy(stream_);
         stream_ = nullptr;
     }
-    // unique_ptr 会自动调用 TrtDeleter / CudaDeleter 释放资源
 }
 
 // ----- 移动构造函数 -----
@@ -132,10 +126,7 @@ YOLOInfer::YOLOInfer(YOLOInfer&& other) noexcept
       output_size_(other.output_size_),
       input_w_(other.input_w_),
       input_h_(other.input_h_),
-      output_num_anchors_(other.output_num_anchors_),
-      output_num_classes_(other.output_num_classes_),
       initialized_(other.initialized_) {
-    // 将源对象置于可安全析构的状态
     other.stream_ = nullptr;
     other.initialized_ = false;
 }
@@ -143,121 +134,83 @@ YOLOInfer::YOLOInfer(YOLOInfer&& other) noexcept
 // ----- 移动赋值运算符 -----
 YOLOInfer& YOLOInfer::operator=(YOLOInfer&& other) noexcept {
     if (this != &other) {
-        // 先释放当前资源（析构函数不会自动调用，此处手动清理？借助 swap）
-        // 实际可重用析构逻辑，这里使用 swap 惯用法
-        runtime_ = std::move(other.runtime_);
-        engine_ = std::move(other.engine_);
-        context_ = std::move(other.context_);
+        runtime_   = std::move(other.runtime_);
+        engine_    = std::move(other.engine_);
+        context_   = std::move(other.context_);
         std::swap(stream_, other.stream_);
-        input_gpu_ = std::move(other.input_gpu_);
+        input_gpu_  = std::move(other.input_gpu_);
         output_gpu_ = std::move(other.output_gpu_);
-        input_cpu_ = std::move(other.input_cpu_);
+        input_cpu_  = std::move(other.input_cpu_);
         output_cpu_ = std::move(other.output_cpu_);
-        buffers_ = std::move(other.buffers_);
-        input_size_ = other.input_size_;
+        buffers_    = std::move(other.buffers_);
+        input_size_  = other.input_size_;
         output_size_ = other.output_size_;
-        input_w_ = other.input_w_;
-        input_h_ = other.input_h_;
-        output_num_anchors_ = other.output_num_anchors_;
-        output_num_classes_ = other.output_num_classes_;
+        input_w_     = other.input_w_;
+        input_h_     = other.input_h_;
         initialized_ = other.initialized_;
         other.initialized_ = false;
-        other.stream_ = nullptr;
+        other.stream_      = nullptr;
     }
     return *this;
 }
 
 // ----- 图像预处理（GPU 加速版）-----
-// 将 BGR8 图像直接转换为 NCHW 格式的 float 张量，并存放在 GPU 显存中
+// 调用 preprocess.cu 中的 CUDA kernel，一步完成 resize + 颜色转换 + 归一化
 void YOLOInfer::Preprocess(const cv::Mat& image) {
     launch_preprocess(
-        image.data,                              // 原始像素数据（BGR 8‑bit）
-        image.cols, image.rows,                  // 图像宽高
-        static_cast<float*>(input_gpu_.get()),   // 输出到 GPU 输入缓冲区NCHW
-        stream_                                  // 异步流
+        image.data,
+        image.cols, image.rows,
+        static_cast<float*>(input_gpu_.get()),
+        stream_
     );
-    // 预处理结果已在 GPU 上，无需额外的内存拷贝
 }
 
 // ----- 执行推理 -----
 void YOLOInfer::DoInference() {
-    // enqueueV2 异步执行，传入 CUDA 流
     context_->enqueueV2(buffers_.data(), stream_, nullptr);
 }
 
-// ----- 后处理与 NMS（高效版：std::max_element + 并行）-----
+// ----- 后处理（端到端引擎，直接解析输出 [1, 300, 6]）-----
+// 每行 [x1, y1, x2, y2, confidence, class]，坐标归一化到 [0,1]
 std::vector<BBox> YOLOInfer::Postprocess() {
     cudaStreamSynchronize(stream_);
 
-    cudaMemcpyAsync(output_cpu_.data(), output_gpu_.get(), output_size_,
+    constexpr int max_dets = 300;
+    std::vector<float> output_cpu(max_dets * 6);
+    cudaMemcpyAsync(output_cpu.data(), output_gpu_.get(),
+                    output_cpu.size() * sizeof(float),
                     cudaMemcpyDeviceToHost, stream_);
     cudaStreamSynchronize(stream_);
 
-    const int num_classes = output_num_classes_;
-    const int num_anchors = output_num_anchors_;
-    const float* out = output_cpu_.data();
+    std::vector<BBox> boxes;
+    for (int i = 0; i < max_dets; ++i) {
+        float x1   = output_cpu[i * 6 + 0];
+        float y1   = output_cpu[i * 6 + 1];
+        float x2   = output_cpu[i * 6 + 2];
+        float y2   = output_cpu[i * 6 + 3];
+        float conf = output_cpu[i * 6 + 4];
+        int   cls  = static_cast<int>(output_cpu[i * 6 + 5]);
 
-    std::vector<BBox> proposals;
-    std::vector<float> confidences;
-
-    // 使用 OpenCV 并行循环加速遍历 8400 个锚点
-    cv::parallel_for_(cv::Range(0, num_anchors), [&](const cv::Range& range) {
-        for (int i = range.start; i < range.end; ++i) {
-            const float* row = out + i * (4 + num_classes);
-            float x_center = row[0];
-            float y_center = row[1];
-            float w = row[2];
-            float h = row[3];
-
-            // 用 std::max_element 快速找最大置信度
-            auto max_it = std::max_element(row + 4, row + 4 + num_classes);
-            float max_conf = *max_it;
-            if (max_conf < 0.6f) continue;   // 阈值 0.6 减少后续 NMS 压力
-            int best_label = static_cast<int>(max_it - (row + 4));
-
-            float x1 = (x_center - w / 2.0f) * input_w_;
-            float y1 = (y_center - h / 2.0f) * input_h_;
-            float x2 = (x_center + w / 2.0f) * input_w_;
-            float y2 = (y_center + h / 2.0f) * input_h_;
-
-            // 注意：并行写入容器需加锁
-            static std::mutex mtx;
-            std::lock_guard<std::mutex> lock(mtx);
-            proposals.push_back({x1, y1, x2, y2, max_conf, best_label});
-            confidences.push_back(max_conf);
+        if (conf > 0.5f) {
+            boxes.push_back({x1 * input_w_, y1 * input_h_,
+                             x2 * input_w_, y2 * input_h_, conf, cls});
         }
-    });
-
-    // NMS 转换
-    std::vector<cv::Rect2d> rects;
-    rects.reserve(proposals.size());
-    for (const auto& b : proposals) {
-        rects.emplace_back(b.x1, b.y1, b.x2 - b.x1, b.y2 - b.y1);
     }
-
-    std::vector<int> indices;
-    cv::dnn::NMSBoxes(rects, confidences, 0.5f, 0.4f, indices);
-
-    std::vector<BBox> final_boxes;
-    final_boxes.reserve(indices.size());
-    for (int idx : indices) {
-        final_boxes.push_back(proposals[idx]);
-    }
-    return final_boxes;
+    return boxes;
 }
 
-// ----- 核心推理接口，包含耗时诊断（仅输出一次）-----
+// ----- 核心推理接口 -----
+// 包含耗时诊断：预热 20 次后，统计 100 次各阶段平均耗时（微秒）
 std::vector<BBox> YOLOInfer::Infer(const cv::Mat& image) {
     if (!initialized_) {
         std::cerr << "Infer called but object is not initialized" << std::endl;
         return {};
     }
 
-    // 静态变量：只在第一次调用时初始化，之后累计耗时
     static int call_count = 0;
     static std::chrono::microseconds pre_sum{0}, infer_sum{0}, post_sum{0};
-    static constexpr int kDiagWarmup = 20;   // 预热次数
-    static constexpr int kDiagRuns   = 100;  // 统计次数
+    static constexpr int kDiagWarmup = 20;
+    static constexpr int kDiagRuns   = 100;
 
     auto t0 = std::chrono::high_resolution_clock::now();
     Preprocess(image);
@@ -268,13 +221,11 @@ std::vector<BBox> YOLOInfer::Infer(const cv::Mat& image) {
     auto t3 = std::chrono::high_resolution_clock::now();
 
     ++call_count;
-    // 跳过前 kDiagWarmup 次预热，之后累计 kDiagRuns 次统计
     if (call_count > kDiagWarmup && call_count <= kDiagWarmup + kDiagRuns) {
         pre_sum   += std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0);
         infer_sum += std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
         post_sum  += std::chrono::duration_cast<std::chrono::microseconds>(t3 - t2);
     }
-    // 统计满 kDiagRuns 次后，输出一次平均耗时（微秒）
     if (call_count == kDiagWarmup + kDiagRuns) {
         std::cout << "[Profile] Preprocess avg: " << pre_sum.count() / kDiagRuns
                   << " us, Inference avg: " << infer_sum.count() / kDiagRuns

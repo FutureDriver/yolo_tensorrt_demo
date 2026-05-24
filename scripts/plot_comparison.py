@@ -7,7 +7,7 @@
 # 功能：从各优化阶段的 CSV 读取延迟，绘制 C++ 优化历程对比图
 #       （对比基准为 Python PyTorch），并在图上标注延迟降低百分比
 # 作者：FutureDriver
-# 日期：2026-05-17
+# 日期：2026-05-24
 # ============================================================
 
 import os
@@ -55,11 +55,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__)) + "/.."
 # ================================================================
 #  优化阶段登记
 #     各阶段对应的测试结果文件名：
-#         C++ FP16 初始版本	  ：  results/cpp_fp16_baseline.csv
-#         GPU 预处理 CUDA 化 ：	results/cpp_cuda_pre.csv
-#         GPU 后处理          ：	results/cpp_gpu_post.csv
-#         INT8 量化           ：  results/cpp_int8.csv
-#         流水线化             ：	results/cpp_pipeline.csv
+#         Python PyTorch 基线     ：  results/baseline_benchmark.csv
+#         C++ FP16 初始版本	    ：  results/cpp_fp16_baseline.csv
+#         GPU 预处理 CUDA 化       ：  results/cpp_cuda_pre.csv
+#         端到端检测（后处理 GPU 化）： results/cpp_end2end_fp16.csv
+#         INT8 量化（已编码）      ：  results/cpp_int8.csv（待环境验证）
+#         流水线化（规划中）        ：  results/cpp_pipeline.csv（待实现）
 #     每项：(图表标签, CSV文件相对路径, 框架名)
 #     脚本会按顺序读取，不存在的 CSV 会自动跳过，图里不会显示。
 #     每完成一个优化，只需取消或增加一行即可更新图表。
@@ -85,25 +86,21 @@ stages = [
         "TensorRT_FP16"
     ),
 
-    # ---------- 优化阶段 2：后处理 GPU 化 ----------
-    # 生成方式：用 EfficientNMS 插件重构后，复制新的 CSV 文件
-    # (
-    #     "TRT FP16 + GPU Post",
-    #     "results/cpp_gpu_post.csv",
-    #     "TensorRT_FP16"
-    # ),
+    # ---------- 优化阶段 2：后处理 GPU 化（端到端引擎）----------
+    (
+        "TRT FP16 + End2End",
+        "results/cpp_end2end_fp16.csv",    # 实际保存的快照文件名
+        "TensorRT_FP16"
+    ),
 
-    # ---------- 优化阶段 3：INT8 量化 ----------
-    # 生成方式：构建 INT8 引擎并测试后，复制 CSV
+    # ---------- 优化阶段 3：INT8 量化（已编码，待环境验证）----------
     # (
     #     "TRT INT8 + CUDA Pre",
     #     "results/cpp_int8.csv",
     #     "TensorRT_FP16"
     # ),
 
-    # ---------- 优化阶段 4：流水线化 ----------
-    # 说明：流水线化主要提升吞吐量，延迟可能不变或略增。
-    #       这里先占位，后续可改为吞吐量对比图。
+    # ---------- 优化阶段 4：流水线化（规划中）----------
     # (
     #     "TRT INT8 + Pipeline",
     #     "results/cpp_pipeline.csv",

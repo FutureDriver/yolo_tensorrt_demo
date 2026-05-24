@@ -1,0 +1,2 @@
+framework,mean_ms,std_ms,min_ms,max_ms,p95_ms,p99_ms,fps
+TensorRT_FP16,3.98038,0.267906,3.28937,5.19906,4.42045,4.69007,251.232
