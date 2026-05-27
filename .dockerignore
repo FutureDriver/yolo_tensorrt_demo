@@ -1,0 +1,12 @@
+build/
+models/*.engine
+models/*.onnx
+models/*.pt
+models/*.bak
+data/calibration/
+data/calibration_test/
+backup/
+results/
+*.tar.gz
+*.zip
+*.Zone.Identifier
