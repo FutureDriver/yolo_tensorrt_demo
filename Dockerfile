@@ -44,7 +44,17 @@
 
 #CMD ["/bin/bash"]
 
-FROM ghcr.io/futuredriver/yolo-trt-demo-base:latest
+# GitHub Container Registry 
+# (GitHub 容器镜像仓库（也常译为 GitHub 容器注册表 或 GitHub 容器仓库）)
+#FROM ghcr.io/futuredriver/yolo-trt-demo-base:latest
+
+#WORKDIR /workspace/demo
+#COPY . .
+
+#CMD ["/bin/bash"]
+
+# 阿里云
+FROM crpi-ztrpo5sgrnerrgv0.cn-hangzhou.personal.cr.aliyuncs.com/futuredriver/yolo-trt-demo:latest
 
 WORKDIR /workspace/demo
 COPY . .
