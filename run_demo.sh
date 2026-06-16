@@ -22,10 +22,8 @@ if ! command -v docker &> /dev/null; then
 fi
 
 # 2. 检查 GPU 支持
-if ! docker info 2>/dev/null | grep -i 'runtimes' | grep -q 'nvidia'; then
-    echo "❌ Docker 未检测到 nvidia 运行时。"
-    echo "   请安装 NVIDIA Container Toolkit 并重启 Docker。"
-    echo "   参考：https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html"
+if ! docker run --rm --gpus all yolo-trt-demo nvidia-smi &> /dev/null; then
+    echo "❌ Docker 无法访问 GPU，请重新配置 nvidia-ctk runtime。"
     exit 1
 fi
 
