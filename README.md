@@ -5,7 +5,7 @@ SPDX-License-Identifier: MIT
 文件：README.md
 功能：项目说明文档
 作者：FutureDriver
-日期：2026-05-27
+日期：2026-06-17
 ============================================================ -->
 
 # YOLOv8 TensorRT C++ 高性能部署 Demo
@@ -16,20 +16,24 @@ SPDX-License-Identifier: MIT
 
 | 框架 | 平均延迟 | P95 延迟 | 吞吐量 (FPS) | 相对 PyTorch 提升 |
 |------|----------|----------|--------------|-------------------|
-| Python PyTorch (Baseline) | 7.59 ms | 8.51 ms | 131.7 | — |
-| C++ TensorRT FP16 (初始) | 6.22 ms | 6.94 ms | 160.9 | -18.0% |
-| C++ TensorRT + CUDA 预处理 | 4.50 ms | 5.24 ms | 222.0 | -40.7% |
-| **C++ TensorRT + 端到端检测** | **3.98 ms** | **4.42 ms** | **251.2** | **-47.6%** |
+| Python PyTorch (Baseline) | 9.89 ms | - | 101.1 | — |
+| Python ONNX Runtime | 6.40 ms | - | 156.3 | -35.3% |
+| C++ TensorRT FP16 (初始) | 6.22 ms | 6.94 ms | 160.9 | -37.1% |
+| C++ TensorRT + CUDA 预处理 | 4.50 ms | 5.24 ms | 222.0 | -54.5% |
+| **C++ TensorRT + 端到端检测** | **4.07 ms** | **5.83 ms** | **245.4** | **-58.8%** |
+
 
 ![性能对比图](results/performance_chart.png)
 
-> **阶段耗时分解**（Profile 100 次平均，典型值）：
-> - 预处理 (GPU)：1.28 ms
-> - 推理 (GPU，含 NMS)：2.92 ms
-> - 后处理 (CPU)：0.045 ms
-> - **1000 次基准平均总延迟：3.98 ms**（相对 PyTorch 基线降低 **47.6%**）
+> **阶段耗时分解**（Profile 100次平均，最近一次实测）：
+> - 预处理 (GPU)：1.65 ms
+> - 推理 (GPU，含NMS)：2.78 ms
+> - 后处理 (CPU)：0.053 ms
+> - **1000次基准平均总延迟：4.07 ms**（相对PyTorch基线9.89ms降低 **58.8%**）
 >
-> NMS 已移入 TensorRT 引擎，后处理仅需简单结果拷贝。下一步可通过 CUDA Graph 或 INT8 量化进一步降低推理延迟。
+> NMS已移入TensorRT引擎，后处理仅需简单结果拷贝。
+> 因GPU温度与系统负载影响，每次运行数据有正常波动（历史最优3.98ms）。
+> 下一步可通过CUDA Graph或INT8量化进一步降低推理延迟。
 
 ## 🚀 快速开始
 
@@ -72,7 +76,7 @@ make -j$(nproc)
 - **RAII 资源管理**：所有 CUDA 资源（Runtime、Engine、Context、CUDA Stream、GPU 显存）均用 `std::unique_ptr` + 自定义 Deleter 封装，零裸指针，确保异常安全。
 - **移动语义**：推理类禁止拷贝，实现 `noexcept` 移动构造函数/赋值运算符。
 - **异步 CUDA 流**：预处理、推理、后处理在独立 CUDA Stream 上异步执行，通过 `cudaStreamSynchronize` 精确控制同步点。
-- **GPU 预处理**：使用 NPP 库进行图像 resize，自定义 CUDA kernel 完成 BGR→RGB、归一化、HWC→CHW 转换，预处理仅 1.3–1.5 ms。
+- **GPU 预处理**：使用 NPP 库进行图像 resize，自定义 CUDA kernel 完成 BGR→RGB、归一化、HWC→CHW 转换，预处理仅 1.6 ms。
 - **FP16 量化**：TensorRT 构建时开启 FP16 模式，大幅降低显存占用与推理延迟。
 - **端到端检测**：通过 `initLibNvInferPlugins` 注册 EfficientNMS 插件，将 NMS 合并进 TensorRT 引擎，后处理降至 **0.045 ms**。
 - **编译期优化**：`constexpr`、`std::string_view`、C++17 `if` 初始化等现代特性。
@@ -107,8 +111,8 @@ make -j$(nproc)
 ```
 
 ## 📝 优化路线图
-- [✓] **预处理 CUDA 化**：使用 NPP resize + CUDA kernel 完成缩放与颜色转换，预处理延迟从 2.6ms 降至 1.3ms。
-- [✓] **后处理 GPU 化**：通过 EfficientNMS 插件实现端到端检测，后处理从 2.3ms 降至 0.045ms。
+- [✓] **预处理 CUDA 化**：使用 NPP resize + CUDA kernel 完成缩放与颜色转换，预处理延迟从2.6ms降至1.6ms。
+- [✓] **后处理 GPU 化**：通过 EfficientNMS 插件实现端到端检测，后处理从2.3ms降至0.053ms。
 - [~] **INT8 量化**：校准器与构建逻辑已完成，因 WSL2 环境限制待原生 Linux / Jetson 上验证。
 - [ ] **流水线化**：多线程分离 I/O 与推理，提升连续帧吞吐量。
 
