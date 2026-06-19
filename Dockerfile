@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: MIT
 #
 # 文件：Dockerfile
-# 功能：构建 YOLOv8 TensorRT 推理 Demo 的运行环境
+# 功能：构建 YOLOv8n TensorRT 推理 Demo 的运行环境
 # 作者：FutureDriver
 # 日期：2026-05-26
 # ============================================================

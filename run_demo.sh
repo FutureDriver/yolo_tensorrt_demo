@@ -12,7 +12,7 @@
 set -e
 
 echo "=========================================="
-echo " YOLOv8 TensorRT Demo - One-click Runner"
+echo " YOLOv8n TensorRT Demo - One-click Runner"
 echo "=========================================="
 
 # 1. 检查 Docker

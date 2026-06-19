@@ -8,7 +8,7 @@ SPDX-License-Identifier: MIT
 日期：2026-06-17
 ============================================================ -->
 
-# YOLOv8 TensorRT C++ 高性能部署 Demo
+# YOLOv8n TensorRT C++ 高性能部署 Demo
 
 > 从 ONNX 导出到 C++ TensorRT 推理的完整工程实践，展示 RAII 资源管理、异步 CUDA 流、移动语义等现代 C++ 最佳实践。
 
