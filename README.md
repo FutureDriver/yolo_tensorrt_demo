@@ -111,10 +111,16 @@ make -j$(nproc)
 ```
 
 ## 📝 优化路线图
-- [✓] **预处理 CUDA 化**：使用 NPP resize + CUDA kernel 完成缩放与颜色转换，预处理延迟从2.6ms降至1.6ms。
-- [✓] **后处理 GPU 化**：通过 EfficientNMS 插件实现端到端检测，后处理从2.3ms降至0.053ms。
+### 推理性能优化
+- [✓] **预处理 CUDA 化**：使用 NPP resize + CUDA kernel 完成缩放与颜色转换，预处理延迟从 2.6ms 降至 1.3ms。
+- [✓] **后处理 GPU 化**：通过 EfficientNMS 插件实现端到端检测，后处理从 2.3ms 降至 55us。
 - [~] **INT8 量化**：校准器与构建逻辑已完成，因 WSL2 环境限制待原生 Linux / Jetson 上验证。
-- [ ] **流水线化**：多线程分离 I/O 与推理，提升连续帧吞吐量。
+- [ ] **CUDA Graph**：将推理循环录制成 CUDA Graph，消除 kernel 启动开销。
+- [ ] **双缓冲流水线**：多流并行，提升连续帧吞吐量。
+
+### 感知-决策闭环（当前优先）
+- [ ] **ROS2 节点封装**：将 YOLOInfer 封装为 ROS2 Node，订阅图像话题，发布检测结果。
+- [ ] **Behavior Tree 决策**：使用 BT.CPP 实现感知-决策链路，根据检测结果切换机器人行为。
 
 ## 📄 许可证
 MIT License
